@@ -75,6 +75,13 @@ async def log_requests(request: Request, call_next):
     )
     return response
 
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled exception on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
+
 # ── paths ──────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
 DEFAULT_TEMPLATE = BASE_DIR / "docs" / "summary_template.docx"

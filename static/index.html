@@ -670,6 +670,12 @@
   async function submitJob() {
     if (!pdfInput.files[0]) { alert('Please select a PDF file first.'); return; }
 
+    const fileSizeMB = (pdfInput.files[0].size / 1024 / 1024).toFixed(1);
+    if (pdfInput.files[0].size > 50 * 1024 * 1024) {
+      showError(`File too large (${fileSizeMB} MB). Maximum upload size is 50 MB.`);
+      return;
+    }
+
     const form = new FormData();
     form.append('pdf', pdfInput.files[0]);
     if (tplInput.files[0]) form.append('template', tplInput.files[0]);
@@ -683,9 +689,20 @@
     showSection('progress');
 
     try {
-      const res  = await fetch('/api/summarize', { method: 'POST', body: form });
+      const res = await fetch('/api/summarize', { method: 'POST', body: form });
+
+      // Guard: server may return HTML (e.g. 413 from proxy, 502 gateway error)
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        if (res.status === 413) {
+          throw new Error(`File too large for the server to accept (HTTP 413). Try a smaller PDF (under 5 MB).`);
+        }
+        throw new Error(`Server returned HTTP ${res.status}. Response: ${text.slice(0, 300)}`);
+      }
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Server error');
+      if (!res.ok) throw new Error(data.detail || `Server error (HTTP ${res.status})`);
       currentJobId = data.job_id;
       startPolling();
     } catch (e) {
