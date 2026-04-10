@@ -6,7 +6,9 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 if TYPE_CHECKING:
     from .agents.base import BaseAgent
@@ -51,6 +53,15 @@ class MedicalEvent(BaseModel):
     provider: str = Field(description="Facility or provider name")
     reason: str = Field(description="Reason for visit / summary of findings")
     ref: str = Field(description="Page number reference, e.g. 'Pg 19'")
+
+    @field_validator("ref", mode="before")
+    @classmethod
+    def normalise_ref(cls, v: str) -> str:
+        """Normalise any page reference to 'Pg <n>' (e.g. 'Page 5', 'p.5', '5' → 'Pg 5')."""
+        if not v:
+            return v
+        m = re.search(r"\d+", str(v))
+        return f"Pg {m.group()}" if m else v
 
 
 class ClaimantInfo(BaseModel):
