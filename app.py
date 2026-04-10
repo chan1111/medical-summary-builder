@@ -190,7 +190,7 @@ async def health():
 @app.post("/api/summarize")
 async def summarize(
     pdf: UploadFile = File(...),
-    model: str = Form("gpt-5"),
+    model: str = Form("grok-4-fast"),
     layout: Optional[str] = Form(None),
 ):
     if not os.getenv("AI_BUILDER_TOKEN"):
