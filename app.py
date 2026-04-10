@@ -10,7 +10,8 @@ import threading
 import tempfile
 import time
 import uuid
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -59,7 +60,63 @@ from medical_summary_builder.agents import (
     ReportAgent,
 )
 
-app = FastAPI(title="Medical Summary Builder")
+JOB_TTL_SECONDS = 2 * 60 * 60       # completed/errored jobs kept for 2 hours
+UPLOAD_TTL_SECONDS = 15 * 60        # stale upload sessions expire after 15 minutes
+CLEANUP_INTERVAL_SECONDS = 5 * 60   # run cleanup every 5 minutes
+
+_stop_cleanup = threading.Event()
+
+
+def _cleanup_loop() -> None:
+    """Background thread: evict expired jobs and stale upload sessions."""
+    while not _stop_cleanup.wait(timeout=CLEANUP_INTERVAL_SECONDS):
+        now = datetime.now(timezone.utc)
+
+        # --- clean up finished/errored jobs older than JOB_TTL_SECONDS ---
+        expired_jobs = [
+            jid for jid, j in list(jobs.items())
+            if j.get("status") in ("done", "error")
+            and (now - datetime.fromisoformat(j["created_at"])).total_seconds() > JOB_TTL_SECONDS
+        ]
+        for jid in expired_jobs:
+            job = jobs.pop(jid, None)
+            if job and job.get("output_path"):
+                try:
+                    Path(job["output_path"]).unlink(missing_ok=True)
+                except Exception:
+                    pass
+        if expired_jobs:
+            logger.info("Cleanup: removed %d expired job(s)", len(expired_jobs))
+
+        # --- clean up stale upload sessions older than UPLOAD_TTL_SECONDS ---
+        expired_uploads = [
+            uid for uid, u in list(uploads.items())
+            if (now - datetime.fromisoformat(u["created_at"])).total_seconds()
+            > UPLOAD_TTL_SECONDS
+        ]
+        for uid in expired_uploads:
+            upload = uploads.pop(uid, None)
+            if upload:
+                try:
+                    Path(upload["path"]).unlink(missing_ok=True)
+                except Exception:
+                    pass
+        if expired_uploads:
+            logger.info("Cleanup: removed %d stale upload session(s)", len(expired_uploads))
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    t = threading.Thread(target=_cleanup_loop, daemon=True, name="cleanup-loop")
+    t.start()
+    logger.info("Cleanup loop started (job TTL=%ds, upload TTL=%ds)", JOB_TTL_SECONDS, UPLOAD_TTL_SECONDS)
+    yield
+    _stop_cleanup.set()
+    t.join(timeout=5)
+    logger.info("Cleanup loop stopped")
+
+
+app = FastAPI(title="Medical Summary Builder", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -198,6 +255,7 @@ async def upload_start():
     uploads[upload_id] = {
         "path": WORK_DIR / f"{upload_id}_input.pdf",
         "size": 0,
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     logger.info("[upload:%s] session started", upload_id[:8])
     return {"upload_id": upload_id}
@@ -259,7 +317,7 @@ async def summarize(req: SummarizeRequest):
         "output_path": None,
         "validation_issues": [],
         "completion_through": "",
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
     logger.info(
