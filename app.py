@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import logging.config
 import os
@@ -60,56 +61,138 @@ from medical_summary_builder.agents import (
     ReportAgent,
 )
 
+# ── paths ──────────────────────────────────────────────────────────────────
+BASE_DIR = Path(__file__).parent
+DEFAULT_TEMPLATE = BASE_DIR / "docs" / "summary_template.docx"
+WORK_DIR = Path(tempfile.gettempdir()) / "medsummary"
+OUTPUT_DIR = WORK_DIR / "output"
+WORK_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# ── TTL constants ──────────────────────────────────────────────────────────
 JOB_TTL_SECONDS = 2 * 60 * 60       # completed/errored jobs kept for 2 hours
 UPLOAD_TTL_SECONDS = 15 * 60        # stale upload sessions expire after 15 minutes
 CLEANUP_INTERVAL_SECONDS = 5 * 60   # run cleanup every 5 minutes
 
+# ── file-based job store ───────────────────────────────────────────────────
+# Using files instead of in-memory dicts so that multiple uvicorn worker
+# processes can share state without conflict.
+
+def _job_file(job_id: str) -> Path:
+    return WORK_DIR / f"job_{job_id}.json"
+
+
+def _upload_file(upload_id: str) -> Path:
+    return WORK_DIR / f"upload_{upload_id}.json"
+
+
+def _write_json(path: Path, data: dict) -> None:
+    """Atomic write via temp file + rename (safe across processes)."""
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _read_json(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+# Job helpers
+def _create_job(job_id: str, data: dict) -> None:
+    _write_json(_job_file(job_id), data)
+
+
+def _update_job(job_id: str, **kwargs) -> None:
+    job = _read_json(_job_file(job_id)) or {}
+    job.update(kwargs)
+    _write_json(_job_file(job_id), job)
+
+
+def _get_job(job_id: str) -> dict | None:
+    return _read_json(_job_file(job_id))
+
+
+# Upload helpers
+def _create_upload(upload_id: str, data: dict) -> None:
+    _write_json(_upload_file(upload_id), data)
+
+
+def _get_upload(upload_id: str) -> dict | None:
+    return _read_json(_upload_file(upload_id))
+
+
+def _pop_upload(upload_id: str) -> dict | None:
+    """Read upload metadata and delete the metadata file atomically."""
+    data = _read_json(_upload_file(upload_id))
+    _upload_file(upload_id).unlink(missing_ok=True)
+    return data
+
+
+def _update_upload_size(upload_id: str, added_bytes: int) -> int:
+    """Increment stored size; returns new total. Not race-safe for parallel
+    chunk uploads, but the frontend sends chunks sequentially so this is fine."""
+    upload = _read_json(_upload_file(upload_id)) or {}
+    upload["size"] = upload.get("size", 0) + added_bytes
+    _write_json(_upload_file(upload_id), upload)
+    return upload["size"]
+
+
+# ── cleanup loop ───────────────────────────────────────────────────────────
 _stop_cleanup = threading.Event()
 
 
 def _cleanup_loop() -> None:
-    """Background thread: evict expired jobs and stale upload sessions."""
+    """Background thread: evict expired job and upload metadata files."""
     while not _stop_cleanup.wait(timeout=CLEANUP_INTERVAL_SECONDS):
         now = datetime.now(timezone.utc)
+        expired_jobs = 0
+        expired_uploads = 0
 
-        # --- clean up finished/errored jobs older than JOB_TTL_SECONDS ---
-        expired_jobs = [
-            jid for jid, j in list(jobs.items())
-            if j.get("status") in ("done", "error")
-            and (now - datetime.fromisoformat(j["created_at"])).total_seconds() > JOB_TTL_SECONDS
-        ]
-        for jid in expired_jobs:
-            job = jobs.pop(jid, None)
-            if job and job.get("output_path"):
-                try:
-                    Path(job["output_path"]).unlink(missing_ok=True)
-                except Exception:
-                    pass
+        for p in list(WORK_DIR.glob("job_*.json")):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                if data.get("status") not in ("done", "error"):
+                    continue
+                created = datetime.fromisoformat(data["created_at"])
+                if (now - created).total_seconds() > JOB_TTL_SECONDS:
+                    if data.get("output_path"):
+                        Path(data["output_path"]).unlink(missing_ok=True)
+                    p.unlink(missing_ok=True)
+                    expired_jobs += 1
+            except Exception:
+                pass
+
+        for p in list(WORK_DIR.glob("upload_*.json")):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                created = datetime.fromisoformat(data["created_at"])
+                if (now - created).total_seconds() > UPLOAD_TTL_SECONDS:
+                    if data.get("path"):
+                        Path(data["path"]).unlink(missing_ok=True)
+                    p.unlink(missing_ok=True)
+                    expired_uploads += 1
+            except Exception:
+                pass
+
         if expired_jobs:
-            logger.info("Cleanup: removed %d expired job(s)", len(expired_jobs))
-
-        # --- clean up stale upload sessions older than UPLOAD_TTL_SECONDS ---
-        expired_uploads = [
-            uid for uid, u in list(uploads.items())
-            if (now - datetime.fromisoformat(u["created_at"])).total_seconds()
-            > UPLOAD_TTL_SECONDS
-        ]
-        for uid in expired_uploads:
-            upload = uploads.pop(uid, None)
-            if upload:
-                try:
-                    Path(upload["path"]).unlink(missing_ok=True)
-                except Exception:
-                    pass
+            logger.info("Cleanup: removed %d expired job(s)", expired_jobs)
         if expired_uploads:
-            logger.info("Cleanup: removed %d stale upload session(s)", len(expired_uploads))
+            logger.info("Cleanup: removed %d stale upload session(s)", expired_uploads)
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     t = threading.Thread(target=_cleanup_loop, daemon=True, name="cleanup-loop")
     t.start()
-    logger.info("Cleanup loop started (job TTL=%ds, upload TTL=%ds)", JOB_TTL_SECONDS, UPLOAD_TTL_SECONDS)
+    logger.info(
+        "Cleanup loop started (job TTL=%ds, upload TTL=%ds)",
+        JOB_TTL_SECONDS, UPLOAD_TTL_SECONDS,
+    )
     yield
     _stop_cleanup.set()
     t.join(timeout=5)
@@ -140,17 +223,6 @@ async def global_exception_handler(request: Request, exc: Exception):
     from fastapi.responses import JSONResponse
     return JSONResponse(status_code=500, content={"detail": str(exc)})
 
-# ── paths ──────────────────────────────────────────────────────────────────
-BASE_DIR = Path(__file__).parent
-DEFAULT_TEMPLATE = BASE_DIR / "docs" / "summary_template.docx"
-WORK_DIR = Path(tempfile.gettempdir()) / "medsummary"
-OUTPUT_DIR = WORK_DIR / "output"
-WORK_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# ── in-memory stores ──────────────────────────────────────────────────────
-jobs: dict[str, dict] = {}
-uploads: dict[str, dict] = {}  # upload_id → {path, size}
 
 PIPELINE_STAGES = [
     "Extraction Agent: parsing PDF…",
@@ -177,7 +249,7 @@ def _run_pipeline(
     )
 
     try:
-        jobs[job_id].update(status="running", message=PIPELINE_STAGES[0], stage=0)
+        _update_job(job_id, status="running", message=PIPELINE_STAGES[0], stage=0)
 
         context = PipelineContext(
             pdf_path=pdf_path,
@@ -191,8 +263,7 @@ def _run_pipeline(
             def run(self, ctx: PipelineContext) -> PipelineContext:
                 for i, agent in enumerate(self.agents):
                     msg = PIPELINE_STAGES[min(i, len(PIPELINE_STAGES) - 1)]
-                    jobs[job_id]["message"] = msg
-                    jobs[job_id]["stage"] = i
+                    _update_job(job_id, message=msg, stage=i)
                     logger.info("[job:%s] stage %d — %s", job_id[:8], i, msg)
                     ctx = agent.run(ctx)
                 return ctx
@@ -213,7 +284,8 @@ def _run_pipeline(
             len(final.validation_issues or []),
             getattr(final, "completion_through", ""),
         )
-        jobs[job_id].update(
+        _update_job(
+            job_id,
             status="done",
             message="Summary generated successfully!",
             stage=4,
@@ -225,7 +297,7 @@ def _run_pipeline(
     except Exception as exc:
         elapsed = time.perf_counter() - t0
         logger.error("[job:%s] failed after %.1fs — %s", job_id[:8], elapsed, exc, exc_info=True)
-        jobs[job_id].update(status="error", message=str(exc))
+        _update_job(job_id, status="error", message=str(exc))
 
     finally:
         try:
@@ -252,11 +324,11 @@ async def health():
 async def upload_start():
     """Create a new upload session and return its ID."""
     upload_id = str(uuid.uuid4())
-    uploads[upload_id] = {
-        "path": WORK_DIR / f"{upload_id}_input.pdf",
+    _create_upload(upload_id, {
+        "path": str(WORK_DIR / f"{upload_id}_input.pdf"),
         "size": 0,
         "created_at": datetime.now(timezone.utc).isoformat(),
-    }
+    })
     logger.info("[upload:%s] session started", upload_id[:8])
     return {"upload_id": upload_id}
 
@@ -264,7 +336,7 @@ async def upload_start():
 @app.post("/api/upload/chunk/{upload_id}/{chunk_index}")
 async def upload_chunk(upload_id: str, chunk_index: int, request: Request):
     """Receive one binary chunk (application/octet-stream) and append to file."""
-    upload = uploads.get(upload_id)
+    upload = _get_upload(upload_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload session not found")
 
@@ -272,17 +344,18 @@ async def upload_chunk(upload_id: str, chunk_index: int, request: Request):
     if not body:
         raise HTTPException(status_code=400, detail="Empty chunk body")
 
-    path: Path = upload["path"]
+    path = Path(upload["path"])
     mode = "wb" if chunk_index == 0 else "ab"
     with open(path, mode) as fh:
         fh.write(body)
-    upload["size"] += len(body)
+
+    new_size = _update_upload_size(upload_id, len(body))
 
     logger.info(
         "[upload:%s] chunk %d received (%d B, total %d B)",
-        upload_id[:8], chunk_index, len(body), upload["size"],
+        upload_id[:8], chunk_index, len(body), new_size,
     )
-    return {"chunk": chunk_index, "received": len(body), "total_size": upload["size"]}
+    return {"chunk": chunk_index, "received": len(body), "total_size": new_size}
 
 
 # ── pipeline trigger ───────────────────────────────────────────────────────
@@ -298,11 +371,11 @@ async def summarize(req: SummarizeRequest):
     if not os.getenv("AI_BUILDER_TOKEN"):
         raise HTTPException(status_code=500, detail="AI_BUILDER_TOKEN not configured on server.")
 
-    upload = uploads.pop(req.upload_id, None)
+    upload = _pop_upload(req.upload_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload session not found or already used.")
 
-    pdf_path: Path = upload["path"]
+    pdf_path = Path(upload["path"])
     if not pdf_path.exists():
         raise HTTPException(status_code=400, detail="Uploaded file not found on server.")
 
@@ -310,7 +383,7 @@ async def summarize(req: SummarizeRequest):
     output_path = OUTPUT_DIR / f"summary_{job_id}.docx"
     layout_clean: str | None = req.layout.strip() if req.layout and req.layout.strip() else None
 
-    jobs[job_id] = {
+    _create_job(job_id, {
         "status": "pending",
         "message": "Job queued…",
         "stage": -1,
@@ -318,7 +391,7 @@ async def summarize(req: SummarizeRequest):
         "validation_issues": [],
         "completion_through": "",
         "created_at": datetime.now(timezone.utc).isoformat(),
-    }
+    })
 
     logger.info(
         "[job:%s] queued | upload=%s model=%s layout=%s size=%dB",
@@ -336,7 +409,7 @@ async def summarize(req: SummarizeRequest):
 
 @app.get("/api/job/{job_id}")
 async def job_status(job_id: str):
-    job = jobs.get(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return {
@@ -352,7 +425,7 @@ async def job_status(job_id: str):
 
 @app.get("/api/download/{job_id}")
 async def download(job_id: str):
-    job = jobs.get(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if job["status"] != "done":

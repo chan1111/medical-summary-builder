@@ -170,7 +170,7 @@ docker build -t medical-summary-builder .
 docker run --rm -p 8000:8000 --env-file .env medical-summary-builder
 ```
 
-**Memory management:** The server runs an in-process cleanup loop (every 5 minutes) that automatically removes completed or errored jobs after 2 hours and stale upload sessions after 15 minutes — including their associated files on disk. The `Dockerfile` includes a `HEALTHCHECK` so container runtimes can detect and restart an unresponsive process.
+**Memory management & concurrency:** The server runs **2 uvicorn worker processes** so that a long-running pipeline job in one process never blocks the event loop that serves incoming HTTP requests (avoids Python GIL stalls during CPU-bound PDF extraction). Job and upload state is stored as JSON files under the system temp directory so all workers share the same view. A cleanup loop (every 5 minutes) automatically removes completed or errored jobs after 2 hours and stale upload sessions after 15 minutes, including their associated files on disk. The `Dockerfile` includes a `HEALTHCHECK` so container runtimes can detect and restart an unresponsive process.
 
 **Redeploy after you change `static/index.html` or server code:** commit and push to your default branch so your host (Railway, Render, Fly.io, Cloud Run, etc.) rebuilds the image, **or** rebuild and push the image manually if you deploy from a container registry. This repository has no bundled CI workflow; your platform’s “deploy from GitHub” or manual image update is what picks up new commits.
 
