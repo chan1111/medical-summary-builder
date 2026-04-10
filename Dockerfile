@@ -5,8 +5,20 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Application code
 COPY app.py .
 COPY static/ static/
+
+# Pipeline source (importable via PYTHONPATH)
+COPY src/ src/
+
+# Default Word template
+COPY docs/ docs/
+
+# Runtime directories
+RUN mkdir -p output cache logs
+
+ENV PYTHONPATH=/app/src
 
 EXPOSE 8000
 
