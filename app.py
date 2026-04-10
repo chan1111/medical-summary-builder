@@ -2,18 +2,50 @@
 
 from __future__ import annotations
 
+import logging
+import logging.config
 import os
 import sys
 import threading
 import tempfile
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+
+# ── logging setup ──────────────────────────────────────────────────────────
+logging.config.dictConfig({
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+            "formatter": "default",
+        },
+    },
+    "loggers": {
+        "app": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "uvicorn.access": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "uvicorn.error": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        # Suppress noisy pipeline debug logs in web context
+        "medical_summary_builder": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+    },
+    "root": {"handlers": ["console"], "level": "WARNING"},
+})
+
+logger = logging.getLogger("app")
 
 # Make the pipeline importable
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -27,6 +59,21 @@ from medical_summary_builder.agents import (
 )
 
 app = FastAPI(title="Medical Summary Builder")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        "%s %s → %d  (%.1f ms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+    )
+    return response
 
 # ── paths ──────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
@@ -57,8 +104,11 @@ def _run_pipeline(
     layout: str | None,
 ) -> None:
     """Execute the pipeline in a background thread."""
-    import logging
-    logging.getLogger("medical_summary_builder").setLevel(logging.WARNING)
+    t0 = time.perf_counter()
+    logger.info(
+        "[job:%s] started | model=%s layout=%s pdf=%s",
+        job_id[:8], model, repr(layout), pdf_path.name,
+    )
 
     try:
         jobs[job_id].update(status="running", message=PIPELINE_STAGES[0], stage=0)
@@ -71,14 +121,13 @@ def _run_pipeline(
             layout_instruction=layout,
         )
 
-        # Inject stage-update callbacks via a wrapper so the frontend sees progress
-        stage_ref = [0]
-
         class ProgressPipeline(Pipeline):
             def run(self, ctx: PipelineContext) -> PipelineContext:
                 for i, agent in enumerate(self.agents):
-                    jobs[job_id]["message"] = PIPELINE_STAGES[min(i, len(PIPELINE_STAGES) - 1)]
+                    msg = PIPELINE_STAGES[min(i, len(PIPELINE_STAGES) - 1)]
+                    jobs[job_id]["message"] = msg
                     jobs[job_id]["stage"] = i
+                    logger.info("[job:%s] stage %d — %s", job_id[:8], i, msg)
                     ctx = agent.run(ctx)
                 return ctx
 
@@ -91,6 +140,13 @@ def _run_pipeline(
 
         final = pipeline.run(context)
 
+        elapsed = time.perf_counter() - t0
+        logger.info(
+            "[job:%s] done in %.1fs | issues=%d completion_through=%s",
+            job_id[:8], elapsed,
+            len(final.validation_issues or []),
+            getattr(final, "completion_through", ""),
+        )
         jobs[job_id].update(
             status="done",
             message="Summary generated successfully!",
@@ -101,6 +157,8 @@ def _run_pipeline(
         )
 
     except Exception as exc:
+        elapsed = time.perf_counter() - t0
+        logger.error("[job:%s] failed after %.1fs — %s", job_id[:8], elapsed, exc, exc_info=True)
         jobs[job_id].update(status="error", message=str(exc))
 
     finally:
@@ -159,6 +217,11 @@ async def summarize(
         "completion_through": "",
         "created_at": datetime.utcnow().isoformat(),
     }
+
+    logger.info(
+        "[job:%s] queued | pdf=%s tpl=%s model=%s layout=%s",
+        job_id[:8], pdf.filename, tpl_path.name, model, repr(layout_clean),
+    )
 
     threading.Thread(
         target=_run_pipeline,
