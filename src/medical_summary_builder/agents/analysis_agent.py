@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 from openai import OpenAI
@@ -294,8 +295,9 @@ def _extract_claimant_info(pdf_document: PDFDocument, model: str) -> ClaimantInf
         f"Found [bold]{len(sections)}[/bold] medical record sections to extract."
     )
 
-    # Step 3 — Extract events from each section independently
-    all_events: list[MedicalEvent] = []
+    # Step 3 — Extract events from all sections in parallel
+    # Pre-build section texts (fast, CPU-only) before submitting to thread pool
+    section_tasks: list[tuple[str, int, int, str, str]] = []
     for section_id, start, end, source in sections:
         section_text = "\n\n".join(
             f"--- Page {n} ---\n{pdf_document.get_page_text(n)}"
@@ -303,11 +305,33 @@ def _extract_claimant_info(pdf_document: PDFDocument, model: str) -> ClaimantInf
         )
         console.print(
             f"  [{section_id}] {source} "
-            f"(Pg {start}–{end}, {end - start + 1} pages)…"
+            f"(Pg {start}–{end}, {end - start + 1} pages) queued"
         )
-        events = _extract_events_from_section(section_text, section_id, source, model)
-        all_events.extend(events)
-        console.print(f"    → {len(events)} events extracted")
+        section_tasks.append((section_id, start, end, source, section_text))
+
+    all_events: list[MedicalEvent] = []
+    max_workers = min(len(section_tasks), 4)  # cap at 4 to avoid rate-limit spikes
+    console.print(
+        f"Running [bold]{len(section_tasks)}[/bold] section extractions "
+        f"with [bold]{max_workers}[/bold] parallel workers…"
+    )
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_meta = {
+            executor.submit(
+                _extract_events_from_section,
+                text, sid, src, model,
+            ): (sid, src)
+            for sid, _start, _end, src, text in section_tasks
+        }
+        for future in as_completed(future_to_meta):
+            sid, src = future_to_meta[future]
+            try:
+                events = future.result()
+                all_events.extend(events)
+                console.print(f"  [{sid}] {src} → {len(events)} events extracted")
+            except Exception as exc:
+                logger.warning("Section %s (%s) failed: %s — skipping", sid, src, exc)
 
     # Step 4 — Deduplicate and sort chronologically
     all_events = _deduplicate_events(all_events)
