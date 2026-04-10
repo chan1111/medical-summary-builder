@@ -2,13 +2,14 @@
 
 Strategy:
 1. Check the cache first; if hit, load and skip extraction.
-2. Try pdfplumber (fast, works well for text-based PDFs).
+2. Try pypdfium2 first (C extension — releases the Python GIL so the web
+   server remains responsive while a PDF is being parsed).
 3. Compute quality score = pages with >50 chars / total pages.
-4. If quality < 0.8, retry with pypdfium2 as fallback (when available).
+4. If quality < 0.8, retry with pdfplumber as fallback (pure-Python but
+   handles some edge-case PDFs better).
 5. Save the best result to cache.
 
-pypdfium2 is an optional dependency.  Install it with:
-    uv add pypdfium2
+pypdfium2 ships as a compiled wheel and is listed in requirements.txt.
 """
 
 from __future__ import annotations
@@ -70,24 +71,24 @@ class ExtractionAgent(BaseAgent):
         logger.info("Extracting PDF: %s (hash=%s)", pdf_path.name, pdf_hash)
         console.print(f"Extracting: [cyan]{pdf_path.name}[/cyan]")
 
-        doc, quality = self._extract_pdfplumber(pdf_path)
-        method = "pdfplumber"
-        logger.info("pdfplumber: %d pages, quality=%.0f%%", doc.total_pages, quality * 100)
+        doc, quality = self._extract_pypdfium2(pdf_path)
+        method = "pypdfium2"
+        logger.info("pypdfium2: %d pages, quality=%.0f%%", doc.total_pages, quality * 100)
 
         if quality < QUALITY_THRESHOLD:
             logger.warning(
-                "pdfplumber quality %.0f%% below threshold %.0f%% — retrying with pypdfium2",
+                "pypdfium2 quality %.0f%% below threshold %.0f%% — retrying with pdfplumber",
                 quality * 100, QUALITY_THRESHOLD * 100,
             )
             console.print(
-                f"[yellow]pdfplumber quality {quality:.0%} < {QUALITY_THRESHOLD:.0%} "
-                f"— retrying with pypdfium2[/yellow]"
+                f"[yellow]pypdfium2 quality {quality:.0%} < {QUALITY_THRESHOLD:.0%} "
+                f"— retrying with pdfplumber[/yellow]"
             )
-            doc2, quality2 = self._extract_pypdfium2(pdf_path)
+            doc2, quality2 = self._extract_pdfplumber(pdf_path)
             if quality2 > quality:
                 doc, quality = doc2, quality2
-                method = "pypdfium2"
-                logger.info("pypdfium2 improved quality to %.0f%%", quality * 100)
+                method = "pdfplumber"
+                logger.info("pdfplumber improved quality to %.0f%%", quality * 100)
 
         logger.info("Extraction complete: method=%s, pages=%d, quality=%.0f%%",
                     method, doc.total_pages, quality * 100)
