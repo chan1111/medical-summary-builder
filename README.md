@@ -11,11 +11,39 @@ An LLM-powered **sequential agent pipeline** that ingests a disability/medical c
 **What comes out:** a **finished summary** as a `.docx` file (placeholders filled and the visit timeline written).
 
 ```mermaid
-flowchart LR
-    In["Input: PDF + Word template\n+ optional CLI / prompts"] --> Intent[IntentAgent] --> Extract[ExtractionAgent] --> Analysis[AnalysisAgent] --> Validate[ValidationAgent] --> Report[ReportAgent] --> Out["Output: completed .docx"]
+flowchart TB
+    classDef ioNode    fill:#F59E0B,stroke:#B45309,color:#fff,font-weight:bold
+    classDef stdAgent  fill:#10B981,stroke:#047857,color:#fff,font-weight:bold
+    classDef llmAgent  fill:#3B82F6,stroke:#1D4ED8,color:#fff,font-weight:bold
+    classDef cacheNode fill:#8B5CF6,stroke:#5B21B6,color:#fff
+
+    In(["📄 Input\nPDF  ＋  Word template\n＋ optional CLI flags"]):::ioNode
+
+    subgraph Pipeline["  Agent Pipeline  "]
+        direction TB
+
+        Intent["🎯 IntentAgent\n─────────────────────────\nTemplate vs custom layout\n--layout flag skips prompt"]:::stdAgent
+
+        Extract["📑 ExtractionAgent\n─────────────────────────\nPDF → plain text\npdfplumber  ·  pypdfium2 fallback"]:::stdAgent
+
+        Analysis["🧠 AnalysisAgent  ⚡ LLM\n─────────────────────────\nDemographics  ·  conditions\nChronological visit timeline"]:::llmAgent
+
+        Validate["✅ ValidationAgent  ⚡ LLM\n─────────────────────────\nFuzzy-match each visit row\nCorrect or remove hallucinations"]:::llmAgent
+
+        Report["📝 ReportAgent  ⚡ LLM\n─────────────────────────\nFill placeholders  ·  write timeline\nCustom-layout with fallback"]:::llmAgent
+
+        Intent --> Extract --> Analysis --> Validate --> Report
+    end
+
+    Cache[("💾 PDF Cache\ncache/sha256.json")]:::cacheNode
+    Out(["📋 Output\ncompleted .docx"]):::ioNode
+
+    In      --> Intent
+    Extract <-->|"cache hit / miss"| Cache
+    Report  --> Out
 ```
 
-Analysis, Validation, and Report are the steps that call the configured chat API when the work needs model reasoning or text generation.
+**Legend:** green = no LLM call · blue ⚡ = calls the configured chat API · purple = local disk cache
 
 **What each agent does**
 
