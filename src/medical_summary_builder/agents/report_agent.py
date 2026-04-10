@@ -217,7 +217,7 @@ def _replace_in_paragraph(para, replacements: dict[str, str]) -> None:
 def _fill_events_table(
     table,
     events: list[MedicalEvent],
-    medical_sections: list[dict],
+    medical_sections: list[dict] = [],
 ) -> None:
     while len(table.rows) > 1:
         tr = table.rows[-1]._tr

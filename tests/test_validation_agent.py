@@ -188,12 +188,12 @@ class TestValidationLlmCorrection:
     def test_llm_correction_updates_ref(self, tmp_path, monkeypatch):
         ctx = self._make_context_with_bad_ref(tmp_path)
         monkeypatch.setenv("AI_BUILDER_TOKEN", "test-token")
-        corrected_event = json.dumps({
+        corrected_event = json.dumps([{
             "date": "04/10/2021",
             "provider": "XYZXYZ Clinic",
             "reason": "Follow-up",
             "ref": "Pg 5",
-        })
+        }])
         with patch("medical_summary_builder.agents.validation_agent._call_llm", return_value=corrected_event):
             result = ValidationAgent().run(ctx)
 
@@ -203,7 +203,7 @@ class TestValidationLlmCorrection:
     def test_llm_remove_eliminates_hallucinated_event(self, tmp_path, monkeypatch):
         ctx = self._make_context_with_bad_ref(tmp_path)
         monkeypatch.setenv("AI_BUILDER_TOKEN", "test-token")
-        with patch("medical_summary_builder.agents.validation_agent._call_llm", return_value="REMOVE"):
+        with patch("medical_summary_builder.agents.validation_agent._call_llm", return_value='["REMOVE"]'):
             result = ValidationAgent().run(ctx)
 
         assert result.claimant_info.medical_events == []

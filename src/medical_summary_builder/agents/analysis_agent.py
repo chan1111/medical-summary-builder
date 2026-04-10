@@ -3,11 +3,16 @@
 Chunked extraction strategy (replaces the old single-call approach):
 
 1. Extract claimant demographics from the first DEMOGRAPHICS_PAGES pages only.
-2. Auto-detect F-section boundaries by scanning for "1 of N: XF:" cover pages.
-3. Call the LLM once per F section to extract every individual clinical encounter.
+2. Auto-detect exhibit-section boundaries by scanning for "1 of N: X<Letter>:" cover
+   pages.  Recognised section types include:
+     B  — Medical Evidence of Record (MER)
+     D  — Disability Determination and Transmittal
+     F  — Treating-source Medical Records
+   Any other letter-suffix section (e.g. E, G, …) is also captured.
+3. Call the LLM once per section to extract every individual clinical encounter.
 4. Merge, deduplicate by (date, provider), and sort all events chronologically.
 
-Fallback: if no F-section markers are found, send the full document in one call
+Fallback: if no section markers are found, send the full document in one call
 (legacy behaviour, used for non-standard PDF layouts and unit tests).
 """
 
@@ -220,10 +225,13 @@ def apply_custom_layout(
 # ---------------------------------------------------------------------------
 
 def _find_medical_sections(doc: PDFDocument) -> list[tuple[str, int, int, str]]:
-    """Scan document pages for F-section cover pages.
+    """Scan document pages for SSA exhibit cover pages.
 
-    A cover page starts with "1 of N: XF: <type> Src: <source>" which marks
-    the first page of each medical-record exhibit.
+    A cover page starts with "1 of N: X<Letter>: <type> Src: <source>" which marks
+    the first page of each exhibit section.  This function detects all letter-suffix
+    sections (B, D, F, and any others), so that medical evidence in B-sections
+    (MER) and D-sections (Disability Determination) is captured alongside the
+    treating-source F-sections.
 
     Returns list of (section_id, start_page, end_page, source_name).
     """
@@ -231,7 +239,7 @@ def _find_medical_sections(doc: PDFDocument) -> list[tuple[str, int, int, str]]:
 
     for page in doc.pages:
         text = page.text.strip()
-        m = re.search(r'\b1\s+of\s+(\d+):\s*(\d+F):', text, re.IGNORECASE)
+        m = re.search(r'\b1\s+of\s+(\d+):\s*(\d+[A-Z]):', text, re.IGNORECASE)
         if not m:
             continue
 
@@ -256,7 +264,7 @@ def _find_medical_sections(doc: PDFDocument) -> list[tuple[str, int, int, str]]:
 # ---------------------------------------------------------------------------
 
 def _extract_claimant_info(pdf_document: PDFDocument, model: str) -> ClaimantInfo:
-    """Orchestrate demographics extraction + per-F-section event extraction."""
+    """Orchestrate demographics extraction + per-section event extraction."""
     # Step 1 — Demographics from opening pages only
     demo_pages = min(DEMOGRAPHICS_PAGES, pdf_document.total_pages)
     demo_text = "\n\n".join(
@@ -272,12 +280,12 @@ def _extract_claimant_info(pdf_document: PDFDocument, model: str) -> ClaimantInf
     # Keep only demographic fields — discard any stray medical_events the LLM added
     demographics = {k: v for k, v in demo_data.items() if k in _DEMOGRAPHIC_FIELDS}
 
-    # Step 2 — Detect F-section boundaries
+    # Step 2 — Detect exhibit-section boundaries (B, D, F, …)
     sections = _find_medical_sections(pdf_document)
 
     if not sections:
         console.print(
-            "[yellow]No F-section markers found — falling back to "
+            "[yellow]No exhibit-section markers found — falling back to "
             "full-document extraction.[/yellow]"
         )
         return _fallback_full_extraction(pdf_document.full_text, model)
