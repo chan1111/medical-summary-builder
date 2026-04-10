@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.env
+
+# uv
+uv.lock
+
+# Output files
+output/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# data
+data/
+cache/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Build / packaging
+dist/
+build/
+*.egg-info/
+
+# Ruff cache
+.ruff_cache/
+
+# Cursor IDE
+.cursor/
