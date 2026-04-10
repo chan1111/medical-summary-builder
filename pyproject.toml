@@ -17,6 +17,14 @@ dependencies = [
     "pypdfium2>=5.7.0",
 ]
 
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+    "python-multipart>=0.0.9",
+]
+
 [project.scripts]
 medical-summary = "medical_summary_builder.main:cli"
 

@@ -62,7 +62,6 @@ flowchart TB
 medical_summary_builder/
 ├── README.md
 ├── pyproject.toml
-├── requirements.txt              # Dependencies for app.py + Docker image
 ├── Dockerfile                    # Container: uvicorn app:app on PORT (default 8000)
 ├── app.py                        # FastAPI web UI + PDF → .docx API
 ├── static/
@@ -156,10 +155,10 @@ The app calls the OpenAI-compatible endpoint at `https://space.ai-builders.com/b
 
 ## Web UI & deployment
 
-The FastAPI app in `app.py` serves the static landing page at `/` and mounts assets under `/static`. Web dependencies live in `requirements.txt` (used by Docker). For local preview with a configured `.env`:
+The FastAPI app in `app.py` serves the static landing page at `/` and mounts assets under `/static`. Web dependencies (`fastapi`, `uvicorn`, `httpx`, `python-multipart`) are declared as the `[web]` optional group in `pyproject.toml`. The Dockerfile installs them directly via `pip install ".[web]"`. For local preview with a configured `.env`:
 
 ```bash
-uv pip install -r requirements.txt
+uv pip install ".[web]"
 uv run uvicorn app:app --reload --host 127.0.0.1 --port 8000
 ```
 

@@ -2,15 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies via pyproject.toml
+COPY pyproject.toml .
+COPY src/ src/
+RUN pip install --no-cache-dir ".[web]"
 
 # Application code
 COPY app.py .
 COPY static/ static/
-
-# Pipeline source (importable via PYTHONPATH)
-COPY src/ src/
 
 # Default Word template
 COPY docs/ docs/
