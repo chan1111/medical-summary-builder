@@ -51,6 +51,7 @@ class PDFDocument(BaseModel):
 class MedicalEvent(BaseModel):
     date: str = Field(description="Date of the medical event (MM/DD/YYYY or as written)")
     provider: str = Field(description="Facility or provider name")
+    physician: str = Field(default="", description="Treating physician or clinician name, empty string if not stated")
     reason: str = Field(description="Reason for visit / summary of findings")
     ref: str = Field(description="Page number reference, e.g. 'Pg 19'")
 

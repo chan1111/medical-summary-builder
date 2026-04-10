@@ -78,6 +78,7 @@ Return ONLY a JSON array — no markdown fences, no explanation:
   {
     "date": "MM/DD/YYYY",
     "provider": "Facility or provider name",
+    "physician": "Treating physician or clinician name (e.g. 'Dr. Smith' or 'John Smith, MD'), empty string if not stated",
     "reason": "Brief reason for visit / key finding (max 10 words)",
     "ref": "Pg N"
   }
@@ -127,6 +128,7 @@ Return ONLY valid JSON matching this schema:
     {
       "date": "MM/DD/YYYY",
       "provider": "Facility or provider name",
+      "physician": "Treating physician or clinician name, empty string if not stated",
       "reason": "Brief reason for visit / key findings (max 10 words)",
       "ref": "Pg N"
     }

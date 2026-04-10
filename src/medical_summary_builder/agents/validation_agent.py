@@ -54,7 +54,7 @@ For EACH event in order, return either:
 Return ONLY a JSON array with exactly one entry per input event, in the same order.
 No explanation. No markdown fences.
 Example input:  [event0, event1, event2]
-Example output: [{"date":"...","provider":"...","reason":"...","ref":"Pg 23"}, "REMOVE", {"date":"...","provider":"...","reason":"...","ref":"Pg 45"}]
+Example output: [{"date":"...","provider":"...","physician":"...","reason":"...","ref":"Pg 23"}, "REMOVE", {"date":"...","provider":"...","physician":"...","reason":"...","ref":"Pg 45"}]
 """.strip()
 
 
