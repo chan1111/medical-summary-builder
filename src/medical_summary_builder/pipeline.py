@@ -110,7 +110,7 @@ class PipelineContext(BaseModel):
     pdf_path: Path
     template_path: Path
     output_path: Path
-    model: str = "grok-4-fast"
+    model: str = "gpt-5"
 
     # Intent Agent output
     layout_instruction: str | None = None   # None = use template

@@ -23,7 +23,7 @@ from .agents import (
 load_dotenv()
 console = Console()
 
-DEFAULT_MODEL = "grok-4-fast"
+DEFAULT_MODEL = "gpt-5"
 
 
 @click.command()

@@ -112,7 +112,7 @@ Edit `.env`:
 
 ```
 AI_BUILDER_TOKEN=sk_...
-DEFAULT_MODEL=grok-4-fast
+DEFAULT_MODEL=gpt-5
 ```
 
 The app calls the OpenAI-compatible endpoint at `https://space.ai-builders.com/backend/v1` using this token.
@@ -201,7 +201,7 @@ uv run python -m medical_summary_builder.main \
 | `--template` | Path to `.docx` template | required |
 | `--output` | Path for output `.docx` | `output/summary.docx` |
 | `--layout` | Custom column list or instruction; skips interactive intent | None (prompt or template) |
-| `--model` | AI Builders Space model name | `grok-4-fast` (or `DEFAULT_MODEL` in `.env`) |
+| `--model` | AI Builders Space model name | `gpt-5` (or `DEFAULT_MODEL` in `.env`) |
 
 Example models: `grok-4-fast`, `gemini-2.5-pro`, `gemini-3-flash-preview`, `deepseek`, `gpt-5`, `kimi-k2.5`.
 
