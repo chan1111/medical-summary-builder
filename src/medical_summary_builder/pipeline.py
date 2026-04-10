@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -12,6 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 if TYPE_CHECKING:
     from .agents.base import BaseAgent
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +150,14 @@ class Pipeline:
         self.agents = agents
 
     def run(self, context: PipelineContext) -> PipelineContext:
+        logger.info(
+            "Pipeline starting — %d agent(s): %s",
+            len(self.agents),
+            ", ".join(a.name for a in self.agents),
+        )
         for agent in self.agents:
+            logger.info("--- Running %s ---", agent.name)
             context = agent.run(context)
+            logger.info("%s done", agent.name)
+        logger.info("Pipeline complete")
         return context

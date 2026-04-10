@@ -17,6 +17,7 @@ LLM decision schema:
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
 
@@ -27,6 +28,8 @@ from rich.prompt import Prompt
 
 from .base import BaseAgent
 from ..pipeline import PipelineContext
+
+logger = logging.getLogger(__name__)
 
 AI_BUILDERS_BASE_URL = "https://space.ai-builders.com/backend/v1"
 
@@ -61,6 +64,7 @@ class IntentAgent(BaseAgent):
 
     def _run(self, context: PipelineContext) -> PipelineContext:
         if context.layout_instruction is not None:
+            logger.info("Layout already set via CLI: %s", context.layout_instruction)
             console.print(
                 f"[green]Layout already set:[/green] {context.layout_instruction}"
             )
@@ -79,10 +83,12 @@ class IntentAgent(BaseAgent):
 
         if decision.get("use_template"):
             context.layout_instruction = None
+            logger.info("Intent resolved: default Word template layout")
             console.print("[green]✓ Using default Word template layout.[/green]")
         else:
             columns = decision.get("columns", "Date, Provider, Reason, Ref")
             context.layout_instruction = columns
+            logger.info("Intent resolved: custom layout — %s", columns)
             console.print(f"[green]✓ Custom layout set:[/green] {columns}")
 
         return context

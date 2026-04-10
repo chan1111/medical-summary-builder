@@ -52,6 +52,10 @@ class ExtractionAgent(BaseAgent):
             context.pdf_hash = pdf_hash
             context.extraction_quality = quality
             context.cache_hit = True
+            logger.info(
+                "Cache hit: %s — %d pages, quality=%.0f%%",
+                pdf_path.name, doc.total_pages, quality * 100,
+            )
             console.print(
                 f"[green]Cache hit[/green] — loaded {doc.total_pages} pages "
                 f"(quality={quality:.0%}) from cache."
@@ -63,12 +67,18 @@ class ExtractionAgent(BaseAgent):
         context.pdf_hash = pdf_hash
         context.cache_hit = False
 
+        logger.info("Extracting PDF: %s (hash=%s)", pdf_path.name, pdf_hash)
         console.print(f"Extracting: [cyan]{pdf_path.name}[/cyan]")
 
         doc, quality = self._extract_pdfplumber(pdf_path)
         method = "pdfplumber"
+        logger.info("pdfplumber: %d pages, quality=%.0f%%", doc.total_pages, quality * 100)
 
         if quality < QUALITY_THRESHOLD:
+            logger.warning(
+                "pdfplumber quality %.0f%% below threshold %.0f%% — retrying with pypdfium2",
+                quality * 100, QUALITY_THRESHOLD * 100,
+            )
             console.print(
                 f"[yellow]pdfplumber quality {quality:.0%} < {QUALITY_THRESHOLD:.0%} "
                 f"— retrying with pypdfium2[/yellow]"
@@ -77,7 +87,10 @@ class ExtractionAgent(BaseAgent):
             if quality2 > quality:
                 doc, quality = doc2, quality2
                 method = "pypdfium2"
+                logger.info("pypdfium2 improved quality to %.0f%%", quality * 100)
 
+        logger.info("Extraction complete: method=%s, pages=%d, quality=%.0f%%",
+                    method, doc.total_pages, quality * 100)
         self._print_quality_report(doc, quality, method)
 
         save_cache(pdf_path, pdf_hash, doc, quality)

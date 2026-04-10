@@ -44,6 +44,7 @@ class ReportAgent(BaseAgent):
             )
 
         if context.layout_instruction:
+            logger.info("Building custom layout report: %s", context.layout_instruction)
             console.print(
                 f"Building custom layout report: [cyan]{context.layout_instruction}[/cyan]"
             )
@@ -57,6 +58,7 @@ class ReportAgent(BaseAgent):
                     claimant, custom_rows, context.layout_instruction, output_path,
                     completion_through=context.completion_through,
                 )
+                logger.info("Custom report generated: %s (%d rows)", out_path, len(custom_rows))
             except Exception as exc:
                 logger.warning(
                     "Custom layout LLM call failed (%s) — falling back to default template.", exc
@@ -70,13 +72,16 @@ class ReportAgent(BaseAgent):
                     completion_through=context.completion_through,
                     medical_sections=context.medical_sections,
                 )
+                logger.info("Template report generated (fallback): %s", out_path)
         else:
+            logger.info("Populating Word template: %s", context.template_path)
             console.print("Populating Word template…")
             out_path = _generate_template_report(
                 claimant, context.template_path, output_path,
                 completion_through=context.completion_through,
                 medical_sections=context.medical_sections,
             )
+            logger.info("Template report generated: %s", out_path)
 
         context.report_path = out_path
         console.print(f"[bold green]Report saved →[/bold green] [cyan]{out_path}[/cyan]")

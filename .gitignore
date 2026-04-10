@@ -11,6 +11,9 @@ uv.lock
 # Output files
 output/
 
+# Run logs
+logs/
+
 # OS
 .DS_Store
 Thumbs.db

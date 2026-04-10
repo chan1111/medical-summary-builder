@@ -159,6 +159,10 @@ class AnalysisAgent(BaseAgent):
         if context.pdf_document is None:
             raise RuntimeError("AnalysisAgent requires pdf_document in context.")
 
+        logger.info(
+            "Starting structured extraction: %d pages, model=%s",
+            context.pdf_document.total_pages, context.model,
+        )
         console.print(
             f"Sending [bold]{context.pdf_document.total_pages}[/bold] pages to "
             f"[cyan]{context.model}[/cyan] for structured extraction…"
@@ -169,6 +173,12 @@ class AnalysisAgent(BaseAgent):
             model=context.model,
         )
         context.claimant_info = claimant
+
+        logger.info(
+            "Extraction result: claimant=%r, dob=%s, aod=%s, impairments=%d, events=%d",
+            claimant.name, claimant.dob, claimant.aod,
+            len(claimant.alleged_impairments), len(claimant.medical_events),
+        )
 
         console.print(Panel(
             f"[bold]Claimant:[/bold] {claimant.name or 'Unknown'}\n"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from datetime import datetime
@@ -11,6 +12,7 @@ import click
 from dotenv import load_dotenv
 from rich.console import Console
 
+from .logging_config import setup_logging
 from .pipeline import Pipeline, PipelineContext
 from .agents import (
     IntentAgent,
@@ -22,6 +24,7 @@ from .agents import (
 
 load_dotenv()
 console = Console()
+logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gpt-5"
 
@@ -59,6 +62,19 @@ def cli(
         sys.exit(1)
 
     output_path = _timestamped_path(Path(output))
+
+    log_path = Path("logs") / f"run_{output_path.stem}.log"
+    setup_logging(log_path)
+    console.print(f"[dim]Log: {log_path}[/dim]")
+
+    logger.info("=== Medical Summary Builder run started ===")
+    logger.info("PDF:      %s", pdf)
+    logger.info("Template: %s", template)
+    logger.info("Output:   %s", output_path)
+    logger.info("Model:    %s", model or os.getenv("DEFAULT_MODEL", DEFAULT_MODEL))
+    if layout:
+        logger.info("Layout:   %s", layout)
+
     context = PipelineContext(
         pdf_path=Path(pdf),
         template_path=Path(template),
@@ -76,6 +92,13 @@ def cli(
     ])
 
     final = pipeline.run(context)
+
+    logger.info("=== Pipeline finished ===")
+    logger.info("Report saved: %s", final.report_path)
+    if final.validation_issues:
+        logger.info("Validation issues (%d):", len(final.validation_issues))
+        for issue in final.validation_issues:
+            logger.info("  • %s", issue)
 
     console.rule("[bold green]Pipeline Complete")
     console.print(f"\n[bold green]Report:[/bold green] [cyan]{final.report_path}[/cyan]")

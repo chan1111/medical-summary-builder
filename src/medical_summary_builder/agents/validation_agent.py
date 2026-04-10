@@ -69,10 +69,12 @@ class ValidationAgent(BaseAgent):
         events = claimant.medical_events
 
         if not events:
+            logger.info("No medical events to validate")
             console.print("[yellow]No medical events to validate.[/yellow]")
             context.validation_passed = True
             return context
 
+        logger.info("Validating %d medical events", len(events))
         console.print(
             f"Validating [bold]{len(events)}[/bold] medical events against PDF pages…"
         )
@@ -128,11 +130,19 @@ class ValidationAgent(BaseAgent):
         context.validation_issues = issues
         context.validation_passed = len(flagged) == 0 or len(corrected) > 0
 
+        removed = len(flagged) - (len(corrected) - len(passed))
+        logger.info(
+            "Validation complete: %d passed, %d flagged, %d removed, %d final",
+            len(passed), len(flagged), removed, len(corrected),
+        )
+        for issue in issues:
+            logger.debug("Validation issue: %s", issue)
+
         console.print(
             f"[bold]Validation complete:[/bold] "
             f"{len(passed)} passed, "
             f"{len(flagged)} flagged, "
-            f"{len(flagged) - (len(corrected) - len(passed))} removed. "
+            f"{removed} removed. "
             f"Final events: {len(corrected)}"
         )
 

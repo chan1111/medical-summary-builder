@@ -40,14 +40,16 @@ medical_summary_builder/
 │   └── Medical File.pdf          # Source claimant record (PDF)
 ├── docs/
 │   └── summary_template.docx     # Word template used by the pipeline
+├── logs/                         # Run logs (gitignored) — one .log per run
 ├── src/
 │   └── medical_summary_builder/
 │       ├── __init__.py
-│       ├── main.py               # CLI: builds Pipeline + PipelineContext
+│       ├── main.py               # CLI: builds Pipeline + PipelineContext; initialises logging
 │       ├── pipeline.py           # PipelineContext, PDFDocument, ClaimantInfo, Pipeline
+│       ├── logging_config.py     # setup_logging() — file + console handlers
 │       ├── cache.py              # load_cache / save_cache
 │       └── agents/
-│           ├── base.py           # BaseAgent
+│           ├── base.py           # BaseAgent (logs per-agent timing and exceptions)
 │           ├── intent_agent.py
 │           ├── extraction_agent.py
 │           ├── analysis_agent.py
@@ -214,6 +216,22 @@ Example models: `grok-4-fast`, `gemini-2.5-pro`, `gemini-3-flash-preview`, `deep
 3. **Analysis** — Chunked extraction: demographics from the first 30 pages, then auto-detects F-section boundaries using three cover-page patterns (standard SSA `1 of N: NF:`, no-colon `1 of N NF:`, and keyword `Exhibit NF`). Each section is split into overlapping chunks of at most **10 pages or 32 000 chars (~8 K tokens)** — whichever limit is hit first — with a 2-page overlap to avoid missing events at boundaries. Each chunk calls the LLM with the section's facility name and treatment date range as context anchors. Events are merged, deduplicated by `(date, provider)`, and sorted using proper MM/DD/YYYY date parsing. Falls back to a single full-document call if no F-section markers are found. Sets `completion_through` (e.g. `"F"`) and stores section boundaries in `medical_sections` on the context. `current_age` is always calculated from the claimant's date of birth (not read from the document) so it reflects today's date precisely.
 4. **Validation** — `rapidfuzz` checks each event against its cited page; failures are **batched by page proximity** (events whose ±3-page windows overlap share a single LLM call) to reduce API round-trips. Each batch call returns corrected events or `REMOVE` decisions; markdown fences in the LLM response are stripped before parsing. Unsupported rows are dropped.
 5. **Report** — `python-docx` fills template placeholders and the timeline table, or generates a custom-layout document. If the custom-layout LLM call fails, the output gracefully falls back to the default Word template. The `Last Updated` field automatically appends `– COMPLETED THROUGH <section>`. The duplicate text-paragraph column header is suppressed (the table already has a header row). Each event's PDF page ref is converted to its exhibit size ref (`Pg N` where N = total pages of that F-section), with overlap resolved by preferring the latest-starting section. Events are re-sorted chronologically using proper date parsing before writing. In custom-layout mode the "MEDICAL SUMMARY" title matches the template style (normal paragraph, centered, bold, underlined, Times New Roman); the layout instruction line is not written to the output document.
+
+---
+
+## Logging
+
+Every run writes a structured log file to `logs/run_<output_stem>.log` (e.g. `logs/run_summary_20260410_143022.log`).
+
+| Level | Where | What is captured |
+|-------|-------|-----------------|
+| `DEBUG` | File only | Per-agent start/finish, internal state details |
+| `INFO` | File only | Key pipeline milestones (agent results, extraction quality, validation counts, report path) |
+| `WARNING` | File **and** console | Recoverable issues (low extraction quality, LLM correction failures) |
+| `ERROR` / `EXCEPTION` | File **and** console | Unhandled exceptions with full stack traces |
+
+The `logs/` directory is listed in `.gitignore` so run logs are never committed.  
+A dim `Log: logs/run_…log` line is printed to the console at startup so you always know where to look.
 
 ---
 
