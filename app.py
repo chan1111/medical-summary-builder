@@ -14,9 +14,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 # ── logging setup ──────────────────────────────────────────────────────────
 logging.config.dictConfig({
@@ -90,8 +91,9 @@ OUTPUT_DIR = WORK_DIR / "output"
 WORK_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── in-memory job store ────────────────────────────────────────────────────
+# ── in-memory stores ──────────────────────────────────────────────────────
 jobs: dict[str, dict] = {}
+uploads: dict[str, dict] = {}  # upload_id → {path, size}
 
 PIPELINE_STAGES = [
     "Extraction Agent: parsing PDF…",
@@ -187,26 +189,68 @@ async def health():
     return {"status": "ok"}
 
 
+# ── chunked upload endpoints ───────────────────────────────────────────────
+
+@app.post("/api/upload/start")
+async def upload_start():
+    """Create a new upload session and return its ID."""
+    upload_id = str(uuid.uuid4())
+    uploads[upload_id] = {
+        "path": WORK_DIR / f"{upload_id}_input.pdf",
+        "size": 0,
+    }
+    logger.info("[upload:%s] session started", upload_id[:8])
+    return {"upload_id": upload_id}
+
+
+@app.post("/api/upload/chunk/{upload_id}/{chunk_index}")
+async def upload_chunk(upload_id: str, chunk_index: int, request: Request):
+    """Receive one binary chunk (application/octet-stream) and append to file."""
+    upload = uploads.get(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="Empty chunk body")
+
+    path: Path = upload["path"]
+    mode = "wb" if chunk_index == 0 else "ab"
+    with open(path, mode) as fh:
+        fh.write(body)
+    upload["size"] += len(body)
+
+    logger.info(
+        "[upload:%s] chunk %d received (%d B, total %d B)",
+        upload_id[:8], chunk_index, len(body), upload["size"],
+    )
+    return {"chunk": chunk_index, "received": len(body), "total_size": upload["size"]}
+
+
+# ── pipeline trigger ───────────────────────────────────────────────────────
+
+class SummarizeRequest(BaseModel):
+    upload_id: str
+    model: str = "grok-4-fast"
+    layout: Optional[str] = None
+
+
 @app.post("/api/summarize")
-async def summarize(
-    pdf: UploadFile = File(...),
-    model: str = Form("grok-4-fast"),
-    layout: Optional[str] = Form(None),
-):
+async def summarize(req: SummarizeRequest):
     if not os.getenv("AI_BUILDER_TOKEN"):
         raise HTTPException(status_code=500, detail="AI_BUILDER_TOKEN not configured on server.")
 
+    upload = uploads.pop(req.upload_id, None)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload session not found or already used.")
+
+    pdf_path: Path = upload["path"]
+    if not pdf_path.exists():
+        raise HTTPException(status_code=400, detail="Uploaded file not found on server.")
+
     job_id = str(uuid.uuid4())
-
-    # Save uploaded PDF
-    pdf_path = WORK_DIR / f"{job_id}_input.pdf"
-    pdf_path.write_bytes(await pdf.read())
-
-    # Always use the bundled default template
-    tpl_path = DEFAULT_TEMPLATE
-
     output_path = OUTPUT_DIR / f"summary_{job_id}.docx"
-    layout_clean: str | None = layout.strip() if layout and layout.strip() else None
+    layout_clean: str | None = req.layout.strip() if req.layout and req.layout.strip() else None
 
     jobs[job_id] = {
         "status": "pending",
@@ -219,13 +263,13 @@ async def summarize(
     }
 
     logger.info(
-        "[job:%s] queued | pdf=%s model=%s layout=%s",
-        job_id[:8], pdf.filename, model, repr(layout_clean),
+        "[job:%s] queued | upload=%s model=%s layout=%s size=%dB",
+        job_id[:8], req.upload_id[:8], req.model, repr(layout_clean), upload["size"],
     )
 
     threading.Thread(
         target=_run_pipeline,
-        args=(job_id, pdf_path, tpl_path, output_path, model, layout_clean),
+        args=(job_id, pdf_path, DEFAULT_TEMPLATE, output_path, req.model, layout_clean),
         daemon=True,
     ).start()
 

@@ -652,40 +652,70 @@
     dropZone.classList.add('has-file');
   }
 
+  // ── chunked upload helpers ───────────────────────────────────────────────
+  const CHUNK_SIZE = 480 * 1024; // 480 KB — safely under any proxy limit
+
+  async function uploadInChunks(file) {
+    // 1. Start session
+    const startRes = await fetchJSON('/api/upload/start', 'POST', null);
+    const uploadId = startRes.upload_id;
+
+    // 2. Send chunks
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    for (let i = 0; i < totalChunks; i++) {
+      const slice = file.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      const res = await fetch(`/api/upload/chunk/${uploadId}/${i}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: slice,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(`Chunk ${i + 1}/${totalChunks} failed: ${err.detail || res.status}`);
+      }
+      // update progress message while uploading
+      document.getElementById('progress-msg').textContent =
+        `Uploading PDF… ${i + 1}/${totalChunks} chunks (${((i + 1) / totalChunks * 100) | 0}%)`;
+    }
+
+    return uploadId;
+  }
+
+  async function fetchJSON(url, method, body) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(url, opts);
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      const text = await res.text();
+      throw new Error(`Server returned HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    return data;
+  }
+
   // ── submit ──────────────────────────────────────────────────────────────
   async function submitJob() {
     if (!pdfInput.files[0]) { alert('Please select a PDF file first.'); return; }
 
-    const fileSizeMB = (pdfInput.files[0].size / 1024 / 1024).toFixed(1);
-    if (pdfInput.files[0].size > 50 * 1024 * 1024) {
-      showError(`File too large (${fileSizeMB} MB). Maximum upload size is 50 MB.`);
-      return;
-    }
-
-    const form = new FormData();
-    form.append('pdf', pdfInput.files[0]);
-    form.append('model', document.getElementById('model-select').value);
-    const layoutText = document.getElementById('layout-input').value.trim();
-    if (layoutText) form.append('layout', layoutText);
-
     setSubmitting(true);
     showSection('progress');
+    document.getElementById('progress-msg').textContent = 'Uploading PDF…';
 
     try {
-      const res = await fetch('/api/summarize', { method: 'POST', body: form });
+      // Step 1: chunked upload (bypasses proxy body-size limits)
+      const uploadId = await uploadInChunks(pdfInput.files[0]);
 
-      // Guard: server may return HTML (e.g. 413 from proxy, 502 gateway error)
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        const text = await res.text();
-        if (res.status === 413) {
-          throw new Error(`File too large for the server to accept (HTTP 413). Try a smaller PDF (under 5 MB).`);
-        }
-        throw new Error(`Server returned HTTP ${res.status}. Response: ${text.slice(0, 300)}`);
-      }
+      // Step 2: trigger pipeline
+      document.getElementById('progress-msg').textContent = 'Starting pipeline…';
+      const layoutText = document.getElementById('layout-input').value.trim();
+      const data = await fetchJSON('/api/summarize', 'POST', {
+        upload_id: uploadId,
+        model: document.getElementById('model-select').value,
+        layout: layoutText || null,
+      });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || `Server error (HTTP ${res.status})`);
       currentJobId = data.job_id;
       startPolling();
     } catch (e) {
