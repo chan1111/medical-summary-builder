@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Medical Summary Builder — AI-Powered Clinical Documentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #050a14;
+      --surface: #0d1524;
+      --surface2: #111d30;
+      --border: rgba(99,179,255,0.12);
+      --accent: #3b9eff;
+      --accent2: #7c3aed;
+      --accent3: #06d6a0;
+      --text: #e2eaf5;
+      --muted: #7a90ab;
+      --radius: 16px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── BACKGROUND GLOW ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(59,158,255,0.15) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(124,58,237,0.12) 0%, transparent 55%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      backdrop-filter: blur(18px);
+      background: rgba(5,10,20,0.75);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      height: 64px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 1.05rem; font-weight: 700; color: var(--text);
+      text-decoration: none;
+    }
+    .logo-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+    .nav-links { display: flex; gap: 1.5rem; list-style: none; }
+    .nav-links a { color: var(--muted); text-decoration: none; font-size: .9rem; transition: color .2s; }
+    .nav-links a:hover { color: var(--text); }
+    .nav-badge {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; font-size: .78rem; font-weight: 600;
+      padding: 6px 16px; border-radius: 999px;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      position: relative; z-index: 1;
+      padding: 6rem 2rem 5rem;
+      text-align: center;
+      max-width: 900px; margin: 0 auto;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(59,158,255,0.1); border: 1px solid rgba(59,158,255,0.3);
+      color: var(--accent); font-size: .8rem; font-weight: 600;
+      padding: 6px 16px; border-radius: 999px; margin-bottom: 2rem;
+      letter-spacing: .5px;
+    }
+    .hero-badge .pulse {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--accent3);
+      animation: pulse 2s ease infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50% { opacity: .5; transform: scale(.7); }
+    }
+    h1 {
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      font-weight: 800; line-height: 1.15;
+      letter-spacing: -1.5px;
+      margin-bottom: 1.4rem;
+    }
+    h1 .grad {
+      background: linear-gradient(135deg, var(--accent) 0%, #a78bfa 50%, var(--accent3) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-sub {
+      font-size: 1.15rem; color: var(--muted); line-height: 1.7;
+      max-width: 640px; margin: 0 auto 2.5rem;
+    }
+    .hero-cta {
+      display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #5b7fff);
+      color: #fff; font-weight: 600; font-size: .95rem;
+      padding: 14px 28px; border-radius: 12px; border: none;
+      cursor: pointer; transition: opacity .2s, transform .2s;
+      text-decoration: none; display: inline-block;
+    }
+    .btn-primary:hover { opacity: .88; transform: translateY(-2px); }
+    .btn-ghost {
+      background: var(--surface); color: var(--text);
+      font-weight: 500; font-size: .95rem;
+      padding: 14px 28px; border-radius: 12px;
+      border: 1px solid var(--border); cursor: pointer;
+      transition: background .2s, transform .2s; text-decoration: none;
+      display: inline-block;
+    }
+    .btn-ghost:hover { background: var(--surface2); transform: translateY(-2px); }
+
+    /* ── STATS ── */
+    .stats {
+      position: relative; z-index: 1;
+      display: flex; justify-content: center; gap: 2.5rem; flex-wrap: wrap;
+      padding: 2.5rem 2rem;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      max-width: 900px; margin: 0 auto;
+    }
+    .stat { text-align: center; }
+    .stat-num { font-size: 2rem; font-weight: 800; color: var(--accent); }
+    .stat-label { font-size: .82rem; color: var(--muted); margin-top: 2px; }
+
+    /* ── SECTION ── */
+    section {
+      position: relative; z-index: 1;
+      max-width: 1100px; margin: 0 auto;
+      padding: 5rem 2rem;
+    }
+    .section-tag {
+      font-size: .78rem; font-weight: 700; letter-spacing: 2px;
+      text-transform: uppercase; color: var(--accent); margin-bottom: .8rem;
+    }
+    .section-title { font-size: clamp(1.7rem, 4vw, 2.4rem); font-weight: 800; letter-spacing: -.8px; margin-bottom: 1rem; }
+    .section-sub { font-size: 1.05rem; color: var(--muted); max-width: 560px; line-height: 1.7; margin-bottom: 3rem; }
+
+    /* ── FEATURES GRID ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.75rem;
+      transition: border-color .25s, transform .25s;
+    }
+    .feature-card:hover { border-color: rgba(59,158,255,0.35); transform: translateY(-4px); }
+    .feature-icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; margin-bottom: 1rem;
+    }
+    .fi-blue { background: rgba(59,158,255,0.15); }
+    .fi-purple { background: rgba(124,58,237,0.15); }
+    .fi-green { background: rgba(6,214,160,0.12); }
+    .fi-orange { background: rgba(251,146,60,0.12); }
+    .fi-pink { background: rgba(236,72,153,0.12); }
+    .fi-teal { background: rgba(20,184,166,0.12); }
+    .feature-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: .5rem; }
+    .feature-card p { font-size: .88rem; color: var(--muted); line-height: 1.65; }
+
+    /* ── PIPELINE ── */
+    .pipeline {
+      display: flex; gap: 0; flex-wrap: wrap;
+      counter-reset: step;
+      position: relative;
+    }
+    .pipe-step {
+      flex: 1; min-width: 160px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem 1.25rem;
+      text-align: center;
+      position: relative;
+      margin: 0 8px 16px;
+      transition: border-color .25s;
+    }
+    .pipe-step:hover { border-color: rgba(59,158,255,.35); }
+    .pipe-num {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; font-size: .8rem; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 1rem;
+    }
+    .pipe-step h4 { font-size: .9rem; font-weight: 700; margin-bottom: .4rem; }
+    .pipe-step p { font-size: .8rem; color: var(--muted); line-height: 1.6; }
+
+    /* ── DEMO / CHAT ── */
+    .demo-wrapper {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      max-width: 760px; margin: 0 auto;
+    }
+    .demo-bar {
+      background: var(--surface2);
+      padding: .75rem 1.25rem;
+      display: flex; align-items: center; gap: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .dot { width: 11px; height: 11px; border-radius: 50%; }
+    .d1 { background: #ff5f56; } .d2 { background: #ffbd2e; } .d3 { background: #28ca41; }
+    .demo-title { font-size: .82rem; color: var(--muted); margin-left: auto; margin-right: auto; }
+    #chat-messages {
+      height: 320px; overflow-y: auto;
+      padding: 1.25rem;
+      display: flex; flex-direction: column; gap: .75rem;
+    }
+    #chat-messages::-webkit-scrollbar { width: 5px; }
+    #chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+    .msg {
+      display: flex; gap: .6rem;
+      animation: fadeUp .3s ease;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .msg.user { flex-direction: row-reverse; }
+    .avatar {
+      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .8rem; font-weight: 700;
+    }
+    .av-ai  { background: linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; }
+    .av-usr { background: linear-gradient(135deg,var(--accent3),#0ea5e9); color:#fff; }
+    .bubble {
+      max-width: 78%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: .7rem 1rem;
+      font-size: .88rem;
+      line-height: 1.6;
+    }
+    .msg.user .bubble {
+      background: rgba(59,158,255,0.12);
+      border-color: rgba(59,158,255,.25);
+      text-align: right;
+    }
+    .typing-indicator { display: flex; gap: 4px; align-items: center; padding: .5rem .6rem; }
+    .typing-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: bounce .9s infinite; }
+    .typing-dot:nth-child(2) { animation-delay: .15s; }
+    .typing-dot:nth-child(3) { animation-delay: .3s; }
+    @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
+    .demo-input-row {
+      display: flex; gap: .75rem;
+      padding: 1rem 1.25rem;
+      border-top: 1px solid var(--border);
+    }
+    #chat-input {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: .9rem; font-family: inherit;
+      padding: .65rem 1rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+    #chat-input:focus { border-color: rgba(59,158,255,.5); }
+    #chat-input::placeholder { color: var(--muted); }
+    #send-btn {
+      background: linear-gradient(135deg, var(--accent), #5b7fff);
+      color: #fff; border: none; border-radius: 10px;
+      padding: .65rem 1.1rem; cursor: pointer;
+      font-size: .9rem; font-weight: 600;
+      transition: opacity .2s, transform .15s;
+    }
+    #send-btn:hover { opacity: .85; transform: scale(1.04); }
+    #send-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+    /* ── QUICK PROMPTS ── */
+    .quick-prompts {
+      display: flex; gap: .5rem; flex-wrap: wrap;
+      padding: .5rem 1.25rem 0;
+    }
+    .qp {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted); font-size: .78rem;
+      padding: 5px 12px; border-radius: 99px;
+      cursor: pointer; transition: all .2s;
+    }
+    .qp:hover { border-color: rgba(59,158,255,.4); color: var(--text); }
+
+    /* ── CODE BLOCK ── */
+    .code-block {
+      background: #060e1a;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .code-header {
+      display: flex; align-items: center;
+      background: var(--surface2);
+      padding: .65rem 1rem;
+      border-bottom: 1px solid var(--border);
+      gap: .5rem;
+    }
+    .lang-badge {
+      font-size: .7rem; color: var(--muted);
+      background: rgba(59,158,255,.1);
+      border: 1px solid rgba(59,158,255,.2);
+      padding: 2px 8px; border-radius: 4px;
+    }
+    pre { padding: 1.25rem; font-size: .82rem; line-height: 1.7; overflow-x: auto; color: #cdd6f4; }
+    .kw { color: #cba6f7; } .fn { color: #89dceb; } .str { color: #a6e3a1; }
+    .cm { color: #6c7086; } .nu { color: #fab387; }
+
+    /* ── FOOTER ── */
+    footer {
+      position: relative; z-index: 1;
+      text-align: center;
+      padding: 3rem 2rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted); font-size: .85rem;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .stats { gap: 1.5rem; }
+      .pipeline { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav>
+  <a href="#" class="nav-logo">
+    <span class="logo-dot"></span>
+    MedSummary AI
+  </a>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#pipeline">Pipeline</a></li>
+    <li><a href="#demo">Live Demo</a></li>
+    <li><a href="#usage">Usage</a></li>
+  </ul>
+  <span class="nav-badge">AI Powered</span>
+</nav>
+
+<!-- ── HERO ── -->
+<div class="hero">
+  <div class="hero-badge">
+    <span class="pulse"></span>
+    Built with AI Builders Space
+  </div>
+  <h1>
+    Clinical Docs, <br />
+    <span class="grad">Summarized by AI</span>
+  </h1>
+  <p class="hero-sub">
+    Medical Summary Builder is an LLM-powered pipeline that ingests medical case PDFs and produces
+    structured, professional Word document summaries — saving clinicians hours of documentation work.
+  </p>
+  <div class="hero-cta">
+    <a href="#demo" class="btn-primary">Try Live Demo →</a>
+    <a href="#pipeline" class="btn-ghost">How It Works</a>
+  </div>
+</div>
+
+<!-- ── STATS ── -->
+<div class="stats">
+  <div class="stat">
+    <div class="stat-num">5+</div>
+    <div class="stat-label">LLM Models</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">∞</div>
+    <div class="stat-label">Medical Case Files</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">&lt; 2 min</div>
+    <div class="stat-label">Per Summary</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">100%</div>
+    <div class="stat-label">Structured Output</div>
+  </div>
+</div>
+
+<!-- ── FEATURES ── -->
+<section id="features">
+  <div class="section-tag">Features</div>
+  <h2 class="section-title">Everything for Clinical Documentation</h2>
+  <p class="section-sub">
+    From PDF ingestion to polished Word document — a fully automated pipeline powered by state-of-the-art language models.
+  </p>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon fi-blue">📄</div>
+      <h3>Smart PDF Extraction</h3>
+      <p>Accurate text extraction from complex medical PDFs using pdfplumber with layout-aware parsing.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon fi-purple">🤖</div>
+      <h3>Multi-Model LLM Support</h3>
+      <p>Choose from GPT-5, Gemini 2.5 Pro, Grok, DeepSeek, Kimi K2.5 — pick the best model for your workflow.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon fi-green">📋</div>
+      <h3>Structured Summaries</h3>
+      <p>Extracts diagnoses, medications, procedures, lab results, and clinical notes into clean sections.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon fi-orange">📝</div>
+      <h3>Word Document Output</h3>
+      <p>Generates professional .docx files from your template, maintaining consistent formatting and style.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon fi-pink">🔄</div>
+      <h3>Retry & Validation</h3>
+      <p>Built-in tenacity retry logic and Pydantic validation ensure reliable, well-formed output every time.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon fi-teal">⚡</div>
+      <h3>CLI & API Ready</h3>
+      <p>Use as a command-line tool or integrate via Python API into your existing healthcare workflow.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── PIPELINE ── -->
+<section id="pipeline">
+  <div class="section-tag">Pipeline</div>
+  <h2 class="section-title">How It Works</h2>
+  <p class="section-sub">A five-stage automated pipeline turns raw medical PDFs into structured clinical summaries.</p>
+  <div class="pipeline">
+    <div class="pipe-step">
+      <div class="pipe-num">1</div>
+      <h4>PDF Ingestion</h4>
+      <p>Load medical case file, extract raw text with pdfplumber</p>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-num">2</div>
+      <h4>Preprocessing</h4>
+      <p>Clean, chunk, and structure the extracted text for analysis</p>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-num">3</div>
+      <h4>LLM Analysis</h4>
+      <p>Multi-agent LLM pipeline extracts structured medical fields</p>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-num">4</div>
+      <h4>Validation</h4>
+      <p>Pydantic models validate extracted data for completeness</p>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-num">5</div>
+      <h4>Report Generation</h4>
+      <p>Render polished Word document from template with all data</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── DEMO ── -->
+<section id="demo">
+  <div class="section-tag">Interactive Demo</div>
+  <h2 class="section-title">Ask the Medical AI</h2>
+  <p class="section-sub">Chat live with our AI assistant — ask about clinical documentation, the pipeline, or medical summarization best practices.</p>
+
+  <div class="demo-wrapper">
+    <div class="demo-bar">
+      <span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span>
+      <span class="demo-title">Medical AI Assistant · Powered by AI Builders Space</span>
+    </div>
+    <div class="quick-prompts">
+      <button class="qp" onclick="setPrompt('What does this pipeline do?')">What does this pipeline do?</button>
+      <button class="qp" onclick="setPrompt('Which LLM models are supported?')">Supported models?</button>
+      <button class="qp" onclick="setPrompt('What fields does it extract from a medical PDF?')">Fields extracted?</button>
+      <button class="qp" onclick="setPrompt('How long does a summary take?')">How long?</button>
+    </div>
+    <div id="chat-messages">
+      <div class="msg">
+        <div class="avatar av-ai">AI</div>
+        <div class="bubble">
+          Hello! I'm the Medical Summary Builder AI assistant. Ask me anything about the pipeline,
+          supported models, or how to automate your clinical documentation workflow. 👋
+        </div>
+      </div>
+    </div>
+    <div class="demo-input-row">
+      <input id="chat-input" type="text" placeholder="Ask about medical summarization…" onkeydown="if(event.key==='Enter')sendMsg()" />
+      <button id="send-btn" onclick="sendMsg()">Send</button>
+    </div>
+  </div>
+</section>
+
+<!-- ── USAGE ── -->
+<section id="usage">
+  <div class="section-tag">Quick Start</div>
+  <h2 class="section-title">Get Started in Minutes</h2>
+  <p class="section-sub">Install, configure, and run your first medical summary with a single command.</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="lang-badge">bash</span>
+      <span style="font-size:.78rem;color:var(--muted);margin-left:auto;">Installation & Usage</span>
+    </div>
+    <pre><span class="cm"># 1. Clone the repository</span>
+git clone https://github.com/your-org/medical-summary-builder
+
+<span class="cm"># 2. Install with uv (recommended)</span>
+uv sync
+
+<span class="cm"># 3. Configure your API token</span>
+cp .env.example .env
+<span class="cm"># Edit .env and add your AI_BUILDER_TOKEN</span>
+
+<span class="cm"># 4. Run the pipeline</span>
+uv run python -m medical_summary_builder.main \
+  --pdf <span class="str">"data/Medical File.pdf"</span> \
+  --template <span class="str">"docs/summary_template.docx"</span> \
+  --output <span class="str">"output/summary.docx"</span>
+</pre>
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <p>Medical Summary Builder &mdash; Built with ❤️ using <a href="https://space.ai-builders.com">AI Builders Space</a></p>
+  <p style="margin-top:.5rem;">Powered by FastAPI · OpenAI-compatible LLMs · Python 3.11</p>
+</footer>
+
+<script>
+  const messagesEl = document.getElementById('chat-messages');
+  const inputEl    = document.getElementById('chat-input');
+  const sendBtn    = document.getElementById('send-btn');
+
+  function setPrompt(text) {
+    inputEl.value = text;
+    inputEl.focus();
+  }
+
+  function appendMsg(role, text) {
+    const div = document.createElement('div');
+    div.className = `msg ${role === 'user' ? 'user' : ''}`;
+    div.innerHTML = `
+      <div class="avatar ${role === 'user' ? 'av-usr' : 'av-ai'}">${role === 'user' ? 'You' : 'AI'}</div>
+      <div class="bubble">${text.replace(/\n/g, '<br>')}</div>
+    `;
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return div;
+  }
+
+  function showTyping() {
+    const div = document.createElement('div');
+    div.className = 'msg';
+    div.id = 'typing';
+    div.innerHTML = `
+      <div class="avatar av-ai">AI</div>
+      <div class="bubble">
+        <div class="typing-indicator">
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+        </div>
+      </div>
+    `;
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function removeTyping() {
+    const t = document.getElementById('typing');
+    if (t) t.remove();
+  }
+
+  async function sendMsg() {
+    const text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = '';
+    sendBtn.disabled = true;
+
+    appendMsg('user', text);
+    showTyping();
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text })
+      });
+      const data = await res.json();
+      removeTyping();
+      if (res.ok) {
+        appendMsg('ai', data.reply);
+      } else {
+        appendMsg('ai', `⚠️ Error: ${data.detail || 'Something went wrong.'}`);
+      }
+    } catch (e) {
+      removeTyping();
+      appendMsg('ai', '⚠️ Network error. Please try again.');
+    } finally {
+      sendBtn.disabled = false;
+      inputEl.focus();
+    }
+  }
+</script>
+</body>
+</html>
