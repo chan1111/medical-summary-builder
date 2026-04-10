@@ -62,6 +62,11 @@ flowchart TB
 medical_summary_builder/
 ├── README.md
 ├── pyproject.toml
+├── requirements.txt              # Dependencies for app.py + Docker image
+├── Dockerfile                    # Container: uvicorn app:app on PORT (default 8000)
+├── app.py                        # FastAPI web UI + PDF → .docx API
+├── static/
+│   └── index.html                # Landing / marketing page (served at `/`)
 ├── LESSONS_LEARNED.md
 ├── cache/                        # PDF extraction cache (SHA256-keyed JSON)
 ├── data/                         # ⚠️  NOT included in the repository (see note below)
@@ -146,6 +151,26 @@ DEFAULT_MODEL=gpt-5
 ```
 
 The app calls the OpenAI-compatible endpoint at `https://space.ai-builders.com/backend/v1` using this token.
+
+---
+
+## Web UI & deployment
+
+The FastAPI app in `app.py` serves the static landing page at `/` and mounts assets under `/static`. Web dependencies live in `requirements.txt` (used by Docker). For local preview with a configured `.env`:
+
+```bash
+uv pip install -r requirements.txt
+uv run uvicorn app:app --reload --host 127.0.0.1 --port 8000
+```
+
+**Docker** (same layout the image expects: `app.py`, `static/`, `src/`, `docs/`):
+
+```bash
+docker build -t medical-summary-builder .
+docker run --rm -p 8000:8000 --env-file .env medical-summary-builder
+```
+
+**Redeploy after you change `static/index.html` or server code:** commit and push to your default branch so your host (Railway, Render, Fly.io, Cloud Run, etc.) rebuilds the image, **or** rebuild and push the image manually if you deploy from a container registry. This repository has no bundled CI workflow; your platform’s “deploy from GitHub” or manual image update is what picks up new commits.
 
 ---
 
