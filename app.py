@@ -171,8 +171,6 @@ def _run_pipeline(
     finally:
         try:
             pdf_path.unlink(missing_ok=True)
-            if template_path != DEFAULT_TEMPLATE:
-                template_path.unlink(missing_ok=True)
         except Exception:
             pass
 
@@ -192,7 +190,6 @@ async def health():
 @app.post("/api/summarize")
 async def summarize(
     pdf: UploadFile = File(...),
-    template: Optional[UploadFile] = File(None),
     model: str = Form("gpt-5"),
     layout: Optional[str] = Form(None),
 ):
@@ -205,12 +202,8 @@ async def summarize(
     pdf_path = WORK_DIR / f"{job_id}_input.pdf"
     pdf_path.write_bytes(await pdf.read())
 
-    # Template: use uploaded one or fall back to bundled default
-    if template and template.filename:
-        tpl_path = WORK_DIR / f"{job_id}_template.docx"
-        tpl_path.write_bytes(await template.read())
-    else:
-        tpl_path = DEFAULT_TEMPLATE
+    # Always use the bundled default template
+    tpl_path = DEFAULT_TEMPLATE
 
     output_path = OUTPUT_DIR / f"summary_{job_id}.docx"
     layout_clean: str | None = layout.strip() if layout and layout.strip() else None
@@ -226,8 +219,8 @@ async def summarize(
     }
 
     logger.info(
-        "[job:%s] queued | pdf=%s tpl=%s model=%s layout=%s",
-        job_id[:8], pdf.filename, tpl_path.name, model, repr(layout_clean),
+        "[job:%s] queued | pdf=%s model=%s layout=%s",
+        job_id[:8], pdf.filename, model, repr(layout_clean),
     )
 
     threading.Thread(

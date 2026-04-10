@@ -470,16 +470,6 @@
           <span>📎</span><span id="pdf-name"></span>
         </div>
       </div>
-
-      <!-- Template upload (optional) -->
-      <div class="tpl-row" id="tpl-row">
-        <input type="file" id="tpl-input" accept=".docx" />
-        <div class="icon">📋</div>
-        <div class="label-wrap">
-          <strong>Word Template</strong>
-          <span id="tpl-label">Optional — leave blank to use the bundled default template</span>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -488,7 +478,7 @@
     <div class="card-header">
       <div class="step-badge">2</div>
       <h2>Pipeline Options</h2>
-      <span class="sub">Model & layout</span>
+      <span class="sub">Model & table layout</span>
     </div>
     <div class="card-body">
       <div class="form-grid">
@@ -504,16 +494,26 @@
           </select>
         </div>
         <div class="form-group">
-          <label>TABLE LAYOUT</label>
-          <div class="layout-toggle">
-            <div class="layout-btn active" id="btn-tpl" onclick="setLayout('template')">Default Template</div>
-            <div class="layout-btn" id="btn-custom" onclick="setLayout('custom')">Custom Columns</div>
+          <label>TEMPLATE</label>
+          <div style="display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:.6rem .9rem;">
+            <span style="font-size:1.1rem;">📋</span>
+            <span style="font-size:.85rem;color:var(--muted);">Fixed bundled template</span>
+            <span style="margin-left:auto;font-size:.72rem;background:rgba(6,214,160,.12);border:1px solid rgba(6,214,160,.3);color:var(--accent3);padding:2px 8px;border-radius:6px;font-weight:600;">Locked</span>
           </div>
-          <div id="custom-layout-wrap">
-            <input type="text" id="layout-input"
-              placeholder="e.g. Date, Facility, Physician, Summary, Ref" />
-            <div class="hint">Enter column names separated by commas</div>
-          </div>
+        </div>
+      </div>
+
+      <!-- Natural language layout instruction -->
+      <div class="form-group" style="margin-top:1.1rem;">
+        <label>CUSTOM TABLE COLUMNS <span style="font-weight:400;color:var(--muted);letter-spacing:0">(optional)</span></label>
+        <textarea id="layout-input" rows="2"
+          placeholder="Leave blank to use default columns (Date, Provider, Reason, Ref).&#10;Or describe what you want — e.g. &quot;I want columns for Date, Facility, Treating Physician, Diagnosis Summary, and Page Ref&quot;"
+          style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-size:.88rem;font-family:inherit;padding:.65rem .9rem;border-radius:10px;outline:none;resize:vertical;width:100%;transition:border-color .2s;line-height:1.55;"
+          onfocus="this.style.borderColor='rgba(99,179,255,.4)'"
+          onblur="this.style.borderColor=''"
+        ></textarea>
+        <div class="hint" style="margin-top:.4rem;">
+          💡 Describe in any language — the AI will interpret your column preferences. Leave blank for the default layout.
         </div>
       </div>
     </div>
@@ -618,33 +618,19 @@
 
 <script>
   // ── state ──────────────────────────────────────────────────────────────
-  let layoutMode = 'template'; // 'template' | 'custom'
   let currentJobId = null;
   let pollInterval = null;
   let startTime = null;
   let elapsedTimer = null;
 
-  // ── layout toggle ───────────────────────────────────────────────────────
-  function setLayout(mode) {
-    layoutMode = mode;
-    document.getElementById('btn-tpl').classList.toggle('active', mode === 'template');
-    document.getElementById('btn-custom').classList.toggle('active', mode === 'custom');
-    document.getElementById('custom-layout-wrap').classList.toggle('visible', mode === 'custom');
-  }
-
   // ── file inputs ─────────────────────────────────────────────────────────
-  const pdfInput  = document.getElementById('pdf-input');
-  const tplInput  = document.getElementById('tpl-input');
-  const dropZone  = document.getElementById('drop-zone');
-  const pdfChip   = document.getElementById('pdf-chip');
-  const pdfName   = document.getElementById('pdf-name');
-  const tplLabel  = document.getElementById('tpl-label');
+  const pdfInput = document.getElementById('pdf-input');
+  const dropZone = document.getElementById('drop-zone');
+  const pdfChip  = document.getElementById('pdf-chip');
+  const pdfName  = document.getElementById('pdf-name');
 
   pdfInput.addEventListener('change', () => {
     if (pdfInput.files[0]) showPdfFile(pdfInput.files[0]);
-  });
-  tplInput.addEventListener('change', () => {
-    if (tplInput.files[0]) tplLabel.textContent = '📎 ' + tplInput.files[0].name;
   });
 
   // drag-and-drop
@@ -678,12 +664,9 @@
 
     const form = new FormData();
     form.append('pdf', pdfInput.files[0]);
-    if (tplInput.files[0]) form.append('template', tplInput.files[0]);
     form.append('model', document.getElementById('model-select').value);
-    if (layoutMode === 'custom') {
-      const cols = document.getElementById('layout-input').value.trim();
-      if (cols) form.append('layout', cols);
-    }
+    const layoutText = document.getElementById('layout-input').value.trim();
+    if (layoutText) form.append('layout', layoutText);
 
     setSubmitting(true);
     showSection('progress');
@@ -808,10 +791,9 @@
     clearInterval(pollInterval); clearInterval(elapsedTimer);
     currentJobId = null; startTime = null;
 
-    pdfInput.value = ''; tplInput.value = '';
+    pdfInput.value = '';
     pdfChip.classList.add('hidden');
     dropZone.classList.remove('has-file', 'dragover');
-    tplLabel.textContent = 'Optional — leave blank to use the bundled default template';
     document.getElementById('layout-input').value = '';
     document.getElementById('issues-box').classList.add('hidden');
     document.getElementById('issues-list').innerHTML = '';
@@ -823,7 +805,6 @@
     document.getElementById('spinner').className = 'spinner';
     document.getElementById('progress-title').textContent = 'Running pipeline…';
     document.getElementById('result-subtitle').textContent = 'Your medical summary has been generated successfully.';
-    setLayout('template');
     setSubmitting(false);
     for (let i=0;i<5;i++) {
       document.getElementById(`sd-${i}`).className='stage-dot';
