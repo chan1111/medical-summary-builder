@@ -646,7 +646,16 @@
     }
   });
 
+  const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
+
   function showPdfFile(file) {
+    if (file.size > MAX_FILE_BYTES) {
+      alert(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is 5 MB.`);
+      pdfInput.value = '';
+      pdfChip.classList.add('hidden');
+      dropZone.classList.remove('has-file');
+      return;
+    }
     pdfChip.classList.remove('hidden');
     pdfName.textContent = file.name;
     dropZone.classList.add('has-file');
