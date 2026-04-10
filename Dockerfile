@@ -4,6 +4,7 @@ WORKDIR /app
 
 # Install dependencies via pyproject.toml
 COPY pyproject.toml .
+COPY README.md .
 COPY src/ src/
 RUN pip install --no-cache-dir ".[web]"
 
